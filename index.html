@@ -48,11 +48,45 @@
     .muted { color: #666; font-size: 12px; margin-top: 6px; }
 
     @media (max-width: 480px) {
-      th, td { font-size: 13px; padding: 6px; }
-      h1 { font-size: 16px; }
-      .btn { font-size: 14px; padding: 6px 10px; }
-      .sort-btn { font-size: 12px; padding: 3px 6px; }
-    }
+  th, td { font-size: 13px; padding: 6px; }
+  h1 { font-size: 16px; }
+  .btn { font-size: 14px; padding: 6px 10px; }
+  .sort-btn { font-size: 12px; padding: 3px 6px; }
+
+  /* 📱 모바일 테이블 열 너비 조정 */
+  #orderTable td:nth-child(1),  /* 추천 벤더 */
+  #orderTable th:nth-child(1) {
+    width: 80px;
+  }
+
+  #orderTable td:nth-child(2),  /* 품목 */
+  #orderTable th:nth-child(2) {
+    width: auto;
+  }
+
+  #orderTable td:nth-child(3),  /* 실제 벤더 */
+  #orderTable th:nth-child(3) {
+    width: 70px;
+  }
+
+  #orderTable td:nth-child(4),  /* 수량 */
+  #orderTable th:nth-child(4) {
+    width: 70px;
+  }
+
+  /* 수량 input 너비 고정 */
+  input[type="number"] {
+    width: 100%;
+    min-width: 60px;
+    max-width: 70px;
+  }
+
+  /* 벤더 select 너비 고정 */
+  select {
+    min-width: 60px;
+    max-width: 70px;
+  }
+}
   </style>
 </head>
 <body>
@@ -538,3 +572,4 @@ if ('serviceWorker' in navigator) {
 </body>
 
 </html>
+
