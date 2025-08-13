@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>모바일 주문 앱</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 10px; background: #f9f9f9; }
+    header {
+      position: sticky; top: 0; background: white; z-index: 100; padding: 10px;
+      display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; flex-wrap: wrap;
+    }
+    h1 { font-size: 18px; margin: 0; }
+    .btn { font-size: 15px; padding: 8px 12px; margin: 5px; border: none; background: #007aff; color: white; border-radius: 6px; cursor: pointer; }
+    .btn:hover { background: #005bb5; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 10px; background: white; }
+    th, td { border: 1px solid #ccc; padding: 8px; vertical-align: middle; }
+    select, input[type="number"] { width: 100%; padding: 6px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; }
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .sort-btn { font-size: 13px; padding: 4px 8px; margin-left: 6px; border: none; background: #eee; border-radius: 4px; cursor: pointer; }
+    .vendor-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+
+    /* modal */
+    .modal {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      justify-content: center; align-items: center; z-index: 200;
+    }
+    .modal-content {
+      background: white; padding: 20px; border-radius: 8px; width: 92%; max-width: 420px;
+      max-height: 90vh; overflow-y: auto;
+    }
+    .row {
+      display: flex; gap: 8px; margin-bottom: 8px;
+    }
+    /* draggable rows cursor & style */
+    .row[draggable="true"] { cursor: grab; }
+    .row.dragging { opacity: 0.5; }
+    .row input[type="text"] { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
+    .icon-btn { background: #eee; color: #333; border: 1px solid #ddd; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+    .icon-btn:hover { background: #ddd; }
+    .footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+    .muted { color: #666; font-size: 12px; margin-top: 6px; }
+
+    @media (max-width: 480px) {
+  th, td { font-size: 13px; padding: 6px; }
+  h1 { font-size: 16px; }
+  .btn { font-size: 14px; padding: 6px 10px; }
+  .sort-btn { font-size: 12px; padding: 3px 6px; }
+
+  /* 📱 모바일 테이블 열 너비 조정 */
+  #orderTable td:nth-child(1),  /* 추천 벤더 */
+  #orderTable th:nth-child(1) {
+    width: 80px;
+  }
+
+  #orderTable td:nth-child(2),  /* 품목 */
+  #orderTable th:nth-child(2) {
+    width: auto;
+  }
+
+  #orderTable td:nth-child(3),  /* 실제 벤더 */
+  #orderTable th:nth-child(3) {
+    width: 70px;
+  }
+
+  #orderTable td:nth-child(4),  /* 수량 */
+  #orderTable th:nth-child(4) {
+    width: 70px;
+  }
+
+  /* 수량 input 너비 고정 */
+  input[type="number"] {
+    width: 100%;
+    min-width: 60px;
+    max-width: 70px;
+  }
+
+  /* 벤더 select 너비 고정 */
+  select {
+    min-width: 60px;
+    max-width: 70px;
+  }
+}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>모바일 주문 앱</h1>
+    <div>
+      <button class="btn" onclick="goToOrders()">📋 주문 내역 보기</button>
+      <button class="btn" onclick="clearOrders()">🧹 클리어</button>
+      <button class="btn" onclick="openVendorSettings()">⚙️ 벤더 설정</button>
+      <button class="btn" onclick="openItemSettings()">📦 품목 설정</button>
+    </div>
+  </header>
+
+  <table id="orderTable">
+    <thead>
+      <tr>
+        <th>
+          <div class="vendor-header">
+            추천 벤더
+            <button class="sort-btn" id="sortToggleBtn" onclick="toggleRowSort()" title="정렬 토글">🔽</button>
+          </div>
+        </th>
+        <th>품목</th>
+        <th>벤더</th>
+        <th>수량</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+
+  <!-- 벤더 설정 모달 -->
+  <div class="modal" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal-content">
+      <h2 id="settingsTitle">벤더 설정</h2>
+      <div id="vendorList" class="muted">벤더를 추가하거나 이름을 수정하세요.</div>
+      <div class="row" style="margin-top:10px;">
+        <input id="newVendorInput" type="text" placeholder="새 벤더 이름 입력">
+        <button class="icon-btn" onclick="addVendor()">➕ 추가</button>
+      </div>
+      <div class="footer">
+        <button class="icon-btn" onclick="resetVendors()">↩️ 기본값 복원</button>
+        <div style="margin-left:auto; display:flex; gap:8px;">
+          <button class="icon-btn" onclick="closeVendorSettings()">닫기</button>
+        </div>
+      </div>
+      <div class="muted">삭제 시 해당 벤더의 주문은 제거됩니다.</div>
+    </div>
+  </div>
+
+  <!-- 품목 설정 모달 -->
+  <div class="modal" id="itemModal" role="dialog" aria-modal="true" aria-labelledby="itemTitle">
+    <div class="modal-content">
+      <h2 id="itemTitle">품목 설정</h2>
+      <div id="itemList" class="muted">품목을 추가하거나 이름을 수정하세요. 드래그 해서 순서를 바꿀 수 있습니다.</div>
+      <div class="row" style="margin-top:10px;">
+        <input id="newItemInput" type="text" placeholder="새 품목 이름 입력">
+        <button class="icon-btn" onclick="addItem()">➕ 추가</button>
+      </div>
+      <div class="footer">
+        <button class="icon-btn" onclick="resetItems()">↩️ 기본값 복원</button>
+        <div style="margin-left:auto; display:flex; gap:8px;">
+          <button class="icon-btn" onclick="closeItemSettings()">닫기</button>
+        </div>
+      </div>
+      <div class="muted">삭제 시 해당 품목의 모든 주문과 추천 벤더 설정이 제거됩니다.</div>
+    </div>
+  </div>
+
+  <script>
+    // 기본값
+    const DEFAULT_VENDORS = [
+      "","M","N","R",
+      "S","W","H"
+    ];
+    const DEFAULT_ITEMS = [
+      "Tuna Blue fin","Tuna Yellow Fin","Ground Tuna","Escolar","Smoked Salmon",
+      "Unagi","Sushi Ebi","Octopus","Chashu","Naruto Maki","Green Mussel","Ikura",
+      "Tobiko(orange)","Tamago","Kani","Sime Saba","Baby Scallop","Ama Ebi","Ika",
+      "Hokkigai","Snow Crab Leg","Tsubugai","Inari","Scallop 3s","Salmon",
+      "Yellowtail","Albacore Tuna","Uni","Madai","",
+      "Gyoza Veggi","Gyoza Chicken","Gyoza Pork","Gyoza Beef","Seaweed Salad","Squid Salad",
+      "Osaki Shred","Soba Noodle","Udon Noodle","Ramen Noodle","Pork Loin","Chicken Breast",
+      "Shrimp 21-25","Shrimp 71-90","Nobashi Shrimp","Soft Shell Crab Prime","Craw Fish",
+      "Salmon Teriyaki 8oz","Calamari","",
+	"Sushi Nori Half","Sushi Nori Full","Soy Paper","Shichimi","Eel Sauce","Sriracha","Rayu","Yuzu",
+	"Tsuyu","Ponzu","Vinegar","Japanese Dressing","Yakisoba Sauce","Tonkatsu Sauce","Hondashi",
+	"Katsuo 육수","Katsuo 데코","Kizami","Furikake","Wasabi","Karrage Powder","Sweet Chilli Sauce",
+	"Sesame Oil","Sea Salt","Black Pepper","Cajun Powder","Baking Spray","Lemon Juice 1Gal","Mayo",
+	"카레 가루","",
+        "Mirin","KD-39","Shiragiku Vinegar","Miso Soup Base","Soy Sauce 5gal","Oil","Sugar",
+	"Salt","Constachi","Panko","Tempurako","Sushi Rice","","Edamame","Shrimp Shumai","Takoyaki",
+	"Breaded Oyster","Ika Geso","Spring Roll","Corn","",
+        "Avocado","Onion","Red Onion","Sushi Ginger","Cream Cheese","Cucumber","Green Onion","Lemon",
+	"Carrot","Jalapeno","Tonkotsu Ramen Base","Miso Ramen Base","Lettuce","Broccoli","Mushroom","Egg",
+	"Aquamar","Kanpyo","Yama Gobo","Fukujin","Rakkyo","다진 마늘","Butter","Magarin","",
+        "Food Plastic Film 12","Food Plastic Film 18","Wax Paper","은박지 12X10.75","쑤세미","철 쑤세미",
+	"주방 비닐 장갑","프랩 비닐백 6x3x15","Toilet Paper","Hand Tower","Windex","Dish Soap Pink",
+	"Crolox","화장실 청소 스틱","Trash Bag 38-59","Trash Bag 33-39","Fabuloso","Degreaser","Hand Soap","Bounty","",
+	"Sauce Cup 2oz","Sushi Togo Box A01","Sushi Togo Box A02","Sushi Togo Box A03","Donburi Togo Box",
+	"Bento Togo Box","Raman Togo Box","미소투고 10oz","물 투고컵 16oz","샐러드투고 투명 8oz","큰투고박스 3칸",
+	"투고 큰컵 32oz","밥 투고박스","장어 덮밥 투고 28oz","케익 투고박스 38oz","",
+	"Paper Bag #2","Paper Bag #16","Paper Bag #20","Plastic Bag","Togo Spoon","Togo Fork","Togo Knife",
+	"Straw","Napkin","Chopstick","Soy Sauce Packet","Light soy sauce Packet","Wakame","Sweet N Low","",
+	"Ramune Original","Ramune Strawberry","Ramune grape","Ramune Melon","Calpico Original",
+	"Calpico Strawberry","Calpico White Peach","Calpico Melon","Calpico Mango","Coke","Diet Coke","Zero Coke",
+	"Sprite","Dr.Pepper","Fanta","Root Beer","Bottle Water","Toco Chico","Perrier","Milk","Milk Choco",
+	"Orange Juice","Apple Juice","Green Tea Bottle","Jasmine Tea Bottle","Grean tea","Jasmine Tea","Ice Tea","",
+	"고구마","호박","무","생강","두부 Red","두부 Green","단무지","사과","양배추","배추","꽈리고추","세라뇨","불고기",
+	"불고기 소스","만두피","목장갑","다시마","부탄가스","라이스 패이퍼","또띠아","아스파라거스","망고","Ziplock",
+	"Olive Oil (extra)","Creme Brulee","Mochi","Oreo","Sushi Glove S","Sushi Glove M","Bamboo Leaf","Galic Flake","Tenkasu","",
+    ];
+
+    // 상태
+    let vendors = [], items = [], orders = {}, vendorSelections = {}, useSortedRows = true;
+    let dragSrcIndex = null;
+
+    // 로드/저장
+    function loadState(){
+      vendors = JSON.parse(localStorage.getItem("vendors") || JSON.stringify(DEFAULT_VENDORS));
+      items   = JSON.parse(localStorage.getItem("items")   || JSON.stringify(DEFAULT_ITEMS));
+      orders  = JSON.parse(localStorage.getItem("orders")  || "{}");
+      vendorSelections = JSON.parse(localStorage.getItem("vendorSelections") || "{}");
+      useSortedRows    = JSON.parse(localStorage.getItem("useSortedRows")    || "true");
+      if(!vendors.length) vendors = [...DEFAULT_VENDORS];
+      if(!items.length)   items   = [...DEFAULT_ITEMS];
+    }
+    function saveVendors(){ localStorage.setItem("vendors", JSON.stringify(vendors)); }
+    function saveItems()  { localStorage.setItem("items",   JSON.stringify(items));   }
+    function saveOrders() { localStorage.setItem("orders",  JSON.stringify(orders));  }
+    function saveVendorSelections(){ localStorage.setItem("vendorSelections", JSON.stringify(vendorSelections)); }
+    function saveUseSortedRows(){ localStorage.setItem("useSortedRows", JSON.stringify(useSortedRows)); }
+
+    // 드롭다운 생성
+    function createDropdown(options, defaultVal="", onChange=null){
+      const sel = document.createElement("select");
+      options.forEach(o=>{
+        const opt = document.createElement("option");
+        opt.value = o; opt.textContent = o;
+        sel.appendChild(opt);
+      });
+      if(!options.includes(defaultVal)) defaultVal = options[0];
+      sel.value = defaultVal;
+      if(onChange) sel.onchange = ()=> onChange(sel.value);
+      return sel;
+    }
+
+    // 주문 편집
+    function setOrder(vendor,item,qty){
+      if(qty <= 0){
+        if(orders[vendor]){
+          delete orders[vendor][item];
+          if(!Object.keys(orders[vendor]).length) delete orders[vendor];
+        }
+      } else {
+        if(!orders[vendor]) orders[vendor] = {};
+        orders[vendor][item] = qty;
+      }
+      saveOrders();
+    }
+    function setVendorSelection(item,vendor){
+      vendorSelections[item] = vendor;
+      saveVendorSelections();
+      if(useSortedRows) initTable();
+    }
+
+    // 테이블 정렬 기준 가져오기
+    function sortedItems(){
+      return [...items].sort((a,b)=>{
+        const va = vendorSelections[a]||"", vb = vendorSelections[b]||"";
+        if(va === vb) return a.localeCompare(b);
+        return va.localeCompare(vb);
+      });
+    }
+    function currentVendorForItem(item){
+      const ov = Object.keys(orders).find(v=> orders[v]?.[item]!==undefined );
+      const rv = vendorSelections[item];
+      if(ov && vendors.includes(ov)) return ov;
+      if(rv && vendors.includes(rv)) return rv;
+      return vendors[0];
+    }
+
+    // 메인 테이블 렌더링
+    function initTable(){
+      loadState();
+      const tbody = document.getElementById("tableBody");
+      tbody.innerHTML = "";
+      const list = useSortedRows ? sortedItems() : items;
+      document.getElementById("sortToggleBtn")
+ 	 .textContent = useSortedRows ? "🔽" : "🔼";
+
+      list.forEach(item=>{
+        const tr = document.createElement("tr");
+
+        // 추천 벤더
+        const rec = vendorSelections[item]||vendors[0];
+        const selRec = createDropdown(vendors, rec, v=> setVendorSelection(item,v));
+        const tdA = document.createElement("td"); tdA.appendChild(selRec);
+
+        // 품목명
+        const tdB = document.createElement("td"); tdB.textContent = item;
+
+        // 실제 벤더 & 수량
+        const cv = currentVendorForItem(item);
+        const savedQty = orders[cv]?.[item]||0;
+        const selAct = createDropdown(vendors, cv);
+        selAct.onchange = ()=>{
+          // 다른 벤더에 남아있는 동일품목 제거
+          Object.keys(orders).forEach(v=>{
+            if(v!==selAct.value && orders[v]?.[item]!==undefined){
+              delete orders[v][item];
+              if(!Object.keys(orders[v]).length) delete orders[v];
+            }
+          });
+          setOrder(selAct.value, item, Number(inputQty.value)||0);
+        };
+        const tdC = document.createElement("td"); tdC.appendChild(selAct);
+
+        const inputQty = document.createElement("input");
+        inputQty.type="number"; inputQty.min="0"; inputQty.step="1";
+        inputQty.placeholder="0"; inputQty.inputMode="numeric";
+        inputQty.value = savedQty;
+        inputQty.onfocus = ()=> inputQty.select();
+        inputQty.oninput = ()=>{
+          let v = Number(inputQty.value);
+          if(isNaN(v)||v<0) v=0;
+          inputQty.value = v;
+          setOrder(selAct.value, item, v);
+        };
+        const tdD = document.createElement("td"); tdD.appendChild(inputQty);
+
+        [tdA,tdB,tdC,tdD].forEach(td=> tr.appendChild(td));
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 버튼 액션
+    function toggleRowSort(){ useSortedRows = !useSortedRows; saveUseSortedRows(); initTable(); }
+    function goToOrders(){ window.location.href = "orders.html"; }
+    function clearOrders(){
+      if(!confirm("모든 수량을 클리어할까요? (추천 벤더/품목 설정은 유지됩니다)")) return;
+      orders = {}; saveOrders();
+      initTable();
+    }
+
+    // 벤더 설정 modal
+    function openVendorSettings(){
+      loadState();
+      document.getElementById("settingsModal").style.display = "flex";
+      renderVendorList();
+      document.addEventListener("keydown", escCloseVendorOnce);
+      document.getElementById("settingsModal").addEventListener("click", backdropCloseVendorOnce);
+    }
+    function closeVendorSettings(){
+      document.getElementById("settingsModal").style.display = "none";
+      document.removeEventListener("keydown", escCloseVendorOnce);
+      document.getElementById("settingsModal").removeEventListener("click", backdropCloseVendorOnce);
+    }
+    function escCloseVendorOnce(e){ if(e.key==="Escape") closeVendorSettings(); }
+    function backdropCloseVendorOnce(e){ if(e.target.id==="settingsModal") closeVendorSettings(); }
+
+    function renderVendorList(){
+      const wrap = document.getElementById("vendorList");
+      wrap.innerHTML = "";
+      if(!vendors.length) wrap.textContent="벤더가 없습니다. 추가하세요.";
+      vendors.forEach(name=>{
+        const row = document.createElement("div"); row.className="row";
+        const inp = document.createElement("input"); inp.type="text"; inp.value=name;
+        inp.onchange = ()=> renameVendor(name, inp.value.trim());
+        const btn = document.createElement("button"); btn.className="icon-btn"; btn.textContent="🗑️";
+        btn.onclick = ()=> deleteVendor(name);
+        row.appendChild(inp);
+        if(vendors.length>1) row.appendChild(btn);
+        wrap.appendChild(row);
+      });
+    }
+    function addVendor(){
+      const inp = document.getElementById("newVendorInput");
+      const name = (inp.value||"").trim(); if(!name) return;
+      if(vendors.includes(name)){ alert("이미 존재합니다."); return; }
+      vendors.push(name); saveVendors(); inp.value="";
+      renderVendorList(); initTable();
+    }
+    function renameVendor(oldN,newN){
+      if(!newN){ alert("이름을 비울 수 없습니다."); renderVendorList(); return; }
+      if(oldN===newN) return;
+      if(vendors.includes(newN)){ alert("이미 존재합니다."); renderVendorList(); return; }
+      const i = vendors.indexOf(oldN); if(i>=0) vendors[i]=newN;
+      if(orders[oldN]){ orders[newN] = {...orders[newN], ...orders[oldN]}; delete orders[oldN]; }
+      Object.keys(vendorSelections).forEach(it=>{
+        if(vendorSelections[it]===oldN) vendorSelections[it]=newN;
+      });
+      saveVendors(); saveOrders(); saveVendorSelections();
+      renderVendorList(); initTable();
+    }
+    function deleteVendor(name){
+      if(vendors.length<=1){ alert("마지막 벤더는 삭제할 수 없습니다."); return; }
+      if(!confirm(`'${name}'을 삭제할까요? 주문도 제거됩니다.`)) return;
+      vendors = vendors.filter(v=>v!==name);
+      if(orders[name]){ delete orders[name]; saveOrders(); }
+      Object.keys(vendorSelections).forEach(it=>{
+        if(vendorSelections[it]===name) vendorSelections[it]=vendors[0];
+      });
+      saveVendors(); saveVendorSelections();
+      renderVendorList(); initTable();
+    }
+    function resetVendors(){
+      if(!confirm("벤더를 기본값으로 복원할까요?")) return;
+      vendors=[...DEFAULT_VENDORS];
+      Object.keys(vendorSelections).forEach(it=>{
+        if(!vendors.includes(vendorSelections[it])) vendorSelections[it]=vendors[0];
+      });
+      saveVendors(); saveVendorSelections();
+      renderVendorList(); initTable();
+    }
+
+    // 품목 설정 modal (드래그&드롭)
+    function openItemSettings(){
+      loadState();
+      document.getElementById("itemModal").style.display="flex";
+      renderItemList();
+      document.addEventListener("keydown", escCloseItemOnce);
+      document.getElementById("itemModal").addEventListener("click", backdropCloseItemOnce);
+    }
+    function closeItemSettings(){
+      document.getElementById("itemModal").style.display="none";
+      document.removeEventListener("keydown", escCloseItemOnce);
+      document.getElementById("itemModal").removeEventListener("click", backdropCloseItemOnce);
+    }
+    function escCloseItemOnce(e){ if(e.key==="Escape") closeItemSettings(); }
+    function backdropCloseItemOnce(e){ if(e.target.id==="itemModal") closeItemSettings(); }
+
+    function renderItemList(){
+  const wrap = document.getElementById("itemList");
+  wrap.innerHTML = "";
+  if(!items.length) wrap.textContent="품목이 없습니다. 추가하세요.";
+  items.forEach((name, idx)=>{
+    const row = document.createElement("div");
+    row.className = "row";
+    row.draggable = true;
+    row.dataset.index = idx;
+
+    // 드래그 이벤트
+    row.addEventListener("dragstart", e=>{
+      dragSrcIndex = idx;
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", e=>{
+      row.classList.remove("dragging");
+    });
+    row.addEventListener("dragover", e=> e.preventDefault());
+    row.addEventListener("drop", e=>{
+      e.preventDefault();
+      const dst = Number(row.dataset.index);
+      if(dragSrcIndex !== null && dragSrcIndex !== dst){
+        const moved = items.splice(dragSrcIndex, 1)[0];
+        items.splice(dst, 0, moved);
+        saveItems();
+        renderItemList();
+        initTable();
+      }
+      dragSrcIndex = null;
+    });
+
+    // 품목 이름 입력
+    const inp = document.createElement("input");
+    inp.type="text"; inp.value=name; inp.placeholder="품목 이름";
+    inp.onchange = ()=> renameItem(name, inp.value.trim());
+
+    // 삭제 버튼
+    const btnDel = document.createElement("button");
+    btnDel.className="icon-btn"; btnDel.textContent="🗑️";
+    btnDel.onclick = ()=> deleteItem(name);
+
+    // 위로 이동 버튼
+    const btnUp = document.createElement("button");
+    btnUp.className="icon-btn"; btnUp.textContent="⬆️";
+    btnUp.onclick = ()=>{
+      if(idx > 0){
+        const temp = items[idx];
+        items[idx] = items[idx - 1];
+        items[idx - 1] = temp;
+        saveItems();
+        renderItemList();
+        initTable();
+      }
+    };
+
+    // 아래로 이동 버튼
+    const btnDown = document.createElement("button");
+    btnDown.className="icon-btn"; btnDown.textContent="⬇️";
+    btnDown.onclick = ()=>{
+      if(idx < items.length - 1){
+        const temp = items[idx];
+        items[idx] = items[idx + 1];
+        items[idx + 1] = temp;
+        saveItems();
+        renderItemList();
+        initTable();
+      }
+    };
+
+    row.appendChild(inp);
+    if(items.length > 1){
+      row.appendChild(btnUp);
+      row.appendChild(btnDown);
+      row.appendChild(btnDel);
+    }
+    wrap.appendChild(row);
+  });
+}
+    function addItem(){
+      const inp = document.getElementById("newItemInput");
+      const name = (inp.value||"").trim(); if(!name) return;
+      if(items.includes(name)){ alert("이미 존재합니다."); return; }
+      items.push(name); saveItems(); inp.value="";
+      renderItemList(); initTable();
+    }
+    function renameItem(oldN,newN){
+      if(!newN){ alert("이름을 비울 수 없습니다."); renderItemList(); return; }
+      if(oldN===newN) return;
+      if(items.includes(newN)){ alert("이미 존재합니다."); renderItemList(); return; }
+      const i = items.indexOf(oldN); if(i>=0) items[i]=newN;
+      // orders 키
+      Object.keys(orders).forEach(v=>{
+        if(orders[v]?.[oldN]!==undefined){
+          orders[v][newN] = orders[v][oldN];
+          delete orders[v][oldN];
+          if(!Object.keys(orders[v]).length) delete orders[v];
+        }
+      });
+      // selections 키
+      if(vendorSelections[oldN]!==undefined){
+        vendorSelections[newN] = vendorSelections[oldN];
+        delete vendorSelections[oldN];
+      }
+      saveItems(); saveOrders(); saveVendorSelections();
+      renderItemList(); initTable();
+    }
+    function deleteItem(name){
+      if(items.length<=1){ alert("마지막 품목은 삭제할 수 없습니다."); return; }
+      if(!confirm(`'${name}'을 삭제할까요?`)) return;
+      items = items.filter(i=>i!==name);
+      // orders
+      Object.keys(orders).forEach(v=>{
+        if(orders[v]?.[name]!==undefined){
+          delete orders[v][name];
+          if(!Object.keys(orders[v]).length) delete orders[v];
+        }
+      });
+      // selections
+      if(vendorSelections[name]!==undefined) delete vendorSelections[name];
+      saveItems(); saveOrders(); saveVendorSelections();
+      renderItemList(); initTable();
+    }
+    function resetItems(){
+      if(!confirm("품목을 기본값으로 복원할까요?")) return;
+      items = [...DEFAULT_ITEMS];
+      Object.keys(vendorSelections).forEach(k=>{
+        if(!items.includes(k)) delete vendorSelections[k];
+      });
+      Object.keys(orders).forEach(v=>{
+        Object.keys(orders[v]).forEach(k=>{
+          if(!items.includes(k)) delete orders[v][k];
+        });
+        if(!Object.keys(orders[v]).length) delete orders[v];
+      });
+      saveItems(); saveVendorSelections(); saveOrders();
+      renderItemList(); initTable();
+    }
+
+    // 초기 실행
+    loadState();
+    initTable();
+
+if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(() => console.log('✅ Service Worker registered'))
+        .catch(error => console.error('❌ Registration failed:', error));
+    }
+
+
+  </script>
+</body>
+</html>
